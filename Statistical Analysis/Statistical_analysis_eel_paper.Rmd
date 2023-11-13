@@ -1,0 +1,488 @@
+---
+title: "Eel Paper R Markdown"
+author: "Steph"
+date: "10/07/2023"
+output: html_document
+---
+
+```{r Library Imports, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(data.table)
+library(readr)
+library(reshape2)
+library(vegan)
+library(zoo)
+library(tidyverse)
+library(gplots)
+library(reshape)
+library(dplyr)
+```
+
+```{r setup, echo=FALSE}
+getwd()
+
+setwd("/Users/stephaniewaller/Desktop/Eel/Stats")
+```
+
+```{r make bar plot showing the number of raw reads}
+#Import data
+standardised <- read.csv("standardised.csv", header=TRUE)
+standardised
+
+# Need library ggplot2
+raw.read.data = standardised[, 10]
+raw.read.data
+
+#transpose data
+t.raw.read.data = t(raw.read.data)
+t.raw.read.data
+
+#melt data into long data frame format
+melt.t.raw.read.data = melt(t.raw.read.data)
+melt.t.raw.read.data
+
+colnames(melt.t.raw.read.data) = c("#", "Library", "raw_read")
+
+melt.t.raw.read.data
+
+
+#Make stacked bar plot with normalised standardised data
+raw_read_plot = ggplot(melt.t.raw.read.data, aes(x=Library, y=raw_read)) + 
+    geom_bar(stat = "identity") + scale_y_continuous(breaks = seq(min(0), max(300000000), by = 50000000))
+raw_read_plot
+
+```
+
+```{r Normalised viral abundance}
+#Make a normalised viral abundance heatmap with sclae bar 
+normalised_reordered <- read.csv("normalised_reordered.csv", header=TRUE)
+normalised_reordered
+normalised_abundances <- normalised_reordered[, 1:9]
+normalised_abundances
+melted_normalised_abundances <- melt(normalised_abundances)
+melted_normalised_abundances
+colnames(melted_normalised_abundances) <- c("library", "family", "value")
+melted_normalised_abundances
+ggplot(melted_normalised_abundances, aes(x=factor (library, level=c('E1', 'E2', 'E3', 'E4', 'E5', 'E9', 'E10', 'E11', 'E12', 'E6', 'E7', 'E8', 'E13', 'E14')), y= family, fill= value)) + geom_tile() + scale_fill_gradient(low="white", high="blue")
+```
+
+```{r, alpha diveristy by species}
+#ALPHA DIVERSITY
+
+##RICHNESS box plot by species 
+normalised_abund <- normalised_reordered[, 2:9]
+normalised_abund
+species <- normalised_reordered$species
+species
+#transpose data
+tnormalised_abund <- t(normalised_abund)
+tnormalised_abund
+colnames(tnormalised_abund) <- c("E1", "E2", "E3", "E4", "E5", "E9", "E10", "E11", "E12","E6","E7","E8","E13", "E14")
+tnormalised_abund
+library <- c("E1", "E2", "E3", "E4", "E5", "E9", "E10", "E11", "E12","E6","E7","E8","E13", "E14")
+
+#Function specnumber finds the number of species, e.g Hepeviridae has 3 species. With MARGIN = 2, it finds frequencies of species, e.g B1 has 6 species
+richness <- as.data.frame(specnumber(x = tnormalised_abund, MARGIN = 2))
+richness
+richness <- richness %>% dplyr::rename(richness = `specnumber(x = tnormalised_abund, MARGIN = 2)`)
+richness
+
+matrix_test <- t(as.matrix(merge(zoo(species), zoo(richness))))
+colnames(matrix_test) <- c("E1", "E2", "E3", "E4", "E5", "E9", "E10", "E11", "E12","E6","E7","E8","E13", "E14")
+matrix_test
+rownames(matrix_test) = c("species", "richness")
+matrix_test
+
+tmatrix_test <- t(matrix_test)
+tmatrix_test
+tmatrix_test = cbind(tmatrix_test, library)
+tmatrix_test
+df <- as.data.frame(tmatrix_test)
+df
+df$richness <- as.numeric(as.character(df$richness))
+df
+
+richness_plot = ggplot(df, aes(x=species, y=richness, fill=species)) + 
+ geom_boxplot() + geom_jitter(color="black", size=2, alpha=0.2, height =0) + ggtitle("Richness by species")
+richness_plot
+
+#Run Welches T-test on richeness data 
+result_richness<- t.test(richness ~ species, data=df)
+result_richness
+# p-value = 0.7073
+
+
+
+##SHANNON Index boxplot by species
+standardised_abund <- standardised[, 2:9]
+tstandardised_abund <- t(standardised_abund)
+tstandardised_abund = as.data.frame(tstandardised_abund)
+colnames(tstandardised_abund) <- c("E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9","E10","E11","E12","E13", "E14")
+tstandardised_abund
+shannon = apply(tstandardised_abund,2,diversity,index="shannon")
+shannon
+
+shannon_matrix = as.matrix(shannon)
+shannon_matrix
+shannon_matrix_species = cbind(shannon_matrix, standardised$species)
+shannon_matrix_species
+colnames(shannon_matrix_species) = c("Shannon", "Species")
+
+# Extract species
+long = shannon_matrix_species[c(1,2,3,4,5,6,7,8,9,10,11,12),]
+long
+short = shannon_matrix_species[c(13,14),]
+short
+
+# Combine species as separate rows and transpose data
+shannon_matrix_c = t(as.matrix(merge(zoo(long[,1]), zoo(short[,1]))))
+shannon_matrix_c
+class(shannon_matrix_c) = "numeric"
+class(shannon_matrix_c)
+rownames(shannon_matrix_c) = c("long","short")
+shannon_matrix_c
+
+# Transpose and melt
+tshannon = t(shannon_matrix_c)
+tshannon
+melt_shannon = melt(tshannon)
+melt_shannon
+colnames(melt_shannon) = c("1", "Species", "Shannon_index")
+melt_shannon
+#remove extra rows
+melt_shannon <- melt_shannon[-(15:24),]
+melt_shannon
+
+
+#Plot Shannon index by species
+shannon_plot_species = ggplot(melt_shannon, aes(x=Species, y=Shannon_index, fill=Species)) + 
+  geom_boxplot() + geom_jitter(color="black", size=2, alpha=0.2, height=0) + ggtitle("Shannon Index per Species")
+shannon_plot_species
+
+#Run Welches T-test on shannon species data 
+result_shannon_species <- t.test(Shannon_index ~ Species, data=melt_shannon)
+result_shannon_species
+# p-value = 0.1094 no significant
+
+
+##SIMPSON index by species 
+standardised_abund 
+tstandardised_abund
+simpson = apply(tstandardised_abund,2,diversity,index="simpson")
+simpson
+
+
+simpson_matrix = as.matrix(simpson)
+simpson_matrix
+simpson_matrix_species = cbind(simpson_matrix, standardised$species)
+simpson_matrix_species
+colnames(simpson_matrix_species) = c("Simpson", "Species")
+
+# Extract species
+long_simpson = simpson_matrix_species[c(1,2,3,4,5,6,7,8,9,10,11,12),]
+long_simpson
+short_simpson = simpson_matrix_species[c(13,14),]
+short_simpson
+
+# Combine species as separate rows and transpose data
+simpson_matrix_c = t(as.matrix(merge(zoo(long_simpson[,1]), zoo(short_simpson[,1]))))
+simpson_matrix_c
+class(simpson_matrix_c) = "numeric"
+class(simpson_matrix_c)
+rownames(simpson_matrix_c) = c("long","short")
+simpson_matrix_c
+
+# Transpose and melt
+tsimpson = t(simpson_matrix_c)
+tsimpson
+melt_simpson = melt(tsimpson)
+melt_simpson
+colnames(melt_simpson) = c("1", "Species", "simpson_index")
+melt_simpson
+#remove extra rows
+melt_simpson <- melt_simpson[-(15:24),]
+melt_simpson
+
+
+# Plot Shannon index by species
+simpson_plot_species = ggplot(melt_simpson, aes(x=Species, y=simpson_index, fill=Species)) + 
+  geom_boxplot() + geom_jitter(color="black", size=2, alpha=0.2, height=0) + ggtitle("Simpson Index per Species")
+simpson_plot_species
+
+#Run Welches T-test on simpson species data 
+result_simpson_species <- t.test(simpson_index ~ Species, data=melt_simpson)
+result_simpson_species
+# p-value = 0.002781 stat significant
+```
+
+
+
+
+```{r, alpha diveristy by location}
+
+##RICHNESS box plot by location 
+normalised_reordered
+normalised_abund <- normalised_reordered[, 2:9]
+normalised_abund
+location <- normalised_reordered$location
+location
+#transpose data
+tnormalised_abund <- t(normalised_abund)
+tnormalised_abund
+colnames(tnormalised_abund) <- library
+tnormalised_abund
+
+#Function specnumber finds the number of species, e.g Hepeviridae has 3 species. With MARGIN = 2, it finds frequencies of species, e.g B1 has 6 species
+richness <- as.data.frame(specnumber(x = tnormalised_abund, MARGIN = 2))
+richness
+richness <- richness %>% dplyr::rename(richness = `specnumber(x = tnormalised_abund, MARGIN = 2)`)
+richness
+
+matrix_test <- t(as.matrix(merge(zoo(location), zoo(richness))))
+colnames(matrix_test) <- c("E1", "E2", "E3", "E4", "E5", "E9", "E10", "E11", "E12","E6","E7","E8","E13", "E14")
+matrix_test
+rownames(matrix_test) = c("location", "richness")
+matrix_test
+
+tmatrix_test <- t(matrix_test)
+tmatrix_test
+tmatrix_test = cbind(tmatrix_test, library)
+tmatrix_test
+df <- as.data.frame(tmatrix_test)
+df
+df$richness <- as.numeric(as.character(df$richness))
+
+df_location <- df[-(13:14),]
+df_location
+
+richness_plot_location = ggplot(df_location, aes(x=location, y=richness, fill=location)) + 
+ geom_boxplot() + geom_jitter(color="black", size=2, alpha=0.2, height =0) + ggtitle("Richness by location")
+richness_plot_location
+
+#Run Welches T-test on richness location data 
+result_richness_location <- t.test(richness ~ location, data= df_location)
+result_richness_location
+# p-value = 0.9119 not stat significant
+
+
+##SHANNON Index boxplot by location
+standardised 
+standardised_abund <- standardised[, 2:9]
+tstandardised_abund <- t(standardised_abund)
+tstandardised_abund = as.data.frame(tstandardised_abund)
+colnames(tstandardised_abund) <- c("E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9","E10","E11","E12","E13", "E14")
+tstandardised_abund
+shannon = apply(tstandardised_abund,2,diversity,index="shannon")
+shannon
+
+shannon_matrix = as.matrix(shannon)
+shannon_matrix
+shannon_matrix_location = cbind(shannon_matrix, standardised$location)
+shannon_matrix_location
+colnames(shannon_matrix_location) = c("Shannon", "Location")
+
+# Extract species
+teanau = shannon_matrix_species[c(1,2,3,4,5,9,10,11,12),]
+teanau
+mavora = shannon_matrix_species[c(6,7,8),]
+mavora
+#ellesmere = shannon_matrix_species[c(13,14),]
+#ellesmere
+
+# Combine species as separate rows and transpose data
+shannon_matrix_c_location = t(as.matrix(merge(zoo(teanau[,1]), zoo(mavora[,1]))))
+shannon_matrix_c_location
+class(shannon_matrix_c_location) = "numeric"
+class(shannon_matrix_c_location)
+rownames(shannon_matrix_c_location) = c("teanau","mavora")
+shannon_matrix_c_location 
+
+# Transpose and melt
+tshannon_location = t(shannon_matrix_c_location)
+tshannon_location
+melt_shannon_location = melt(tshannon_location)
+melt_shannon_location
+colnames(melt_shannon_location) = c("1", "Location", "Shannon_index")
+melt_shannon_location
+#remove extra rows
+melt_shannon_location <- melt_shannon_location[-(13:18),]
+melt_shannon_location
+#melt_shannon_location <- melt_shannon_location[-(15:20),]
+#melt_shannon_location
+
+#Plot Shannon index by location
+shannon_plot_location = ggplot(melt_shannon_location, aes(x=Location, y= Shannon_index, fill=Location)) + 
+  geom_boxplot() + geom_jitter(color="black", size=2, alpha=0.2, height=0) + ggtitle("Shannon Index per Location")
+shannon_plot_location
+
+#Run Welches T-test on shannon location data 
+result_shannon_location <- t.test(Shannon_index ~ Location, data=melt_shannon_location)
+result_shannon_location
+# p-value = 0.09107 not stat significant
+
+
+
+##SIMPSON index by location
+standardised_abund 
+tstandardised_abund
+simpson = apply(tstandardised_abund,2,diversity,index="simpson")
+simpson
+
+simpson_matrix = as.matrix(simpson)
+simpson_matrix
+simpson_matrix_location = cbind(simpson_matrix, standardised$location)
+simpson_matrix_location
+colnames(simpson_matrix_location) = c("simpson", "Location")
+
+# Extract location
+teanau_simpson = simpson_matrix_location[c(1,2,3,4,5,9,10,11,12),]
+teanau_simpson
+mavora_simpson = simpson_matrix_location[c(6,7,8),]
+mavora_simpson
+#ellesmere_simpson = simpson_matrix_location[c(13,14),]
+#ellesmere_simpson
+
+# Combine location as separate rows and transpose data
+simpson_matrix_c_location = t(as.matrix(merge(zoo(teanau_simpson[,1]), zoo(mavora_simpson[,1]))))
+simpson_matrix_c_location
+class(simpson_matrix_c_location) = "numeric"
+class(simpson_matrix_c_location)
+rownames(simpson_matrix_c_location) = c("teanau","mavora")
+simpson_matrix_c_location
+
+# Transpose and melt
+tsimpson_location = t(simpson_matrix_c_location)
+tsimpson_location
+melt_simpson_location = melt(tsimpson_location)
+melt_simpson_location
+colnames(melt_simpson_location) = c("1", "Location", "simpson_index")
+melt_simpson_location
+#remove extra rows
+melt_simpson_location <- melt_simpson_location[-(13:18),]
+melt_simpson_location
+#melt_simpson_location <- melt_simpson_location[-(15:21),]
+#melt_simpson_location
+
+
+# Plot Simpson index by location
+simpson_plot_location = ggplot(melt_simpson_location, aes(x=Location, y=simpson_index, fill=Location)) + 
+  geom_boxplot() + geom_jitter(color="black", size=2, alpha=0.2, height=0) + ggtitle("simpson Index per Location")
+simpson_plot_location
+
+
+#Run Welches T-test on Simpson location data 
+result_simpson_location <- t.test(simpson_index ~ Location, data=melt_simpson_location)
+result_simpson_location
+# p-value = 0.04814 stat significant
+
+```
+
+```{r beta diveristy with everything}
+standardised_viruses <- standardised[c(1:14),(2:9)]
+standardised_viruses
+standardised_env <-standardised[c(1:14),(13:14)]
+standardised.mds <- metaMDS(standardised_viruses, distance = "bray", autotransform = FALSE)
+standardised.envfit <- envfit(standardised_viruses, standardised_env, permutations = 999)
+standardised.virus.spp.fit <- envfit(standardised.mds, standardised_viruses, permutations = 999)
+
+vdist = vegdist(standardised_viruses, "bray")
+
+viral_site.scrs <- as.data.frame(scores(standardised.mds, display = "sites")) #save NMDS results into dataframe
+viral_site.scrs <- cbind(viral_site.scrs, species = standardised_env$species) #add grouping variable "species" to dataframe
+viral_site.scrs <- cbind(viral_site.scrs, location = standardised_env$location) #add grouping variable "location" of cluster grouping to dataframe
+viral_site.scrs <- mutate_if(viral_site.scrs, is.character, as.factor)
+
+viral_spp.scrs <- as.data.frame(scores(standardised.virus.spp.fit, display = "vectors")) #save species intrinsic values into dataframe
+viral_spp.scrs <- cbind(viral_spp.scrs, Species = rownames(viral_spp.scrs)) #add species names to dataframe
+viral_spp.scrs <- cbind(viral_spp.scrs, pval = standardised.virus.spp.fit$vectors$pvals) #add pvalues to dataframe so you can select species which are significant
+#spp.scrs<- cbind(spp.scrs, abrev = abbreviate(spp.scrs$Species, minlength = 6)) #abbreviate species names
+viral_sig.spp.scrs <- subset(viral_spp.scrs, pval<=0.05) #subset data to show species significant at 0.05
+
+#viral_env.scores <- as.data.frame(scores(standardised.envfit, display = "vectors")) #extracts relevant scores from envifit
+#viral_env.scores <- cbind(viral_env.scores, env.variables = rownames(viral_env.scores)) #and then gives them their names
+#viral_env.scores <- cbind(viral_env.scores, pval = standardised.envfit$vectors$pvals) # add pvalues to dataframe
+#sig.env.scrs <- subset(viral_env.scores, pval<=0.05) #subset data to show variables significant at 0.05
+
+nmds.plot.virus <- ggplot(viral_site.scrs, aes(x=NMDS1, y=NMDS2))+ #sets up the plot
+  geom_point(aes(NMDS1, NMDS2, colour = factor(viral_site.scrs$location), shape = factor(viral_site.scrs$species)), size = 2)+ #adds site points to plot, shape determined by Landuse, colour determined by Management
+  coord_fixed()+
+  theme_classic()+ 
+  theme(panel.background = element_rect(fill = NA, colour = "black", size = 1, linetype = "solid"))+
+  labs(colour = "location", shape = "species")+ # add legend labels for species and location
+  theme(legend.position = "right", legend.text = element_text(size = 12), legend.title = element_text(size = 12), axis.text = element_text(size = 10)) # add legend at right of plot
+
+adonis2(formula = vdist~species + location, data = standardised_env, method = "bray")
+
+```
+
+```{r beta diveristy without shortfinned }
+
+standardised_viruses_wout_short <- standardised[c(1:12),(2:9)]
+standardised_viruses_wout_short
+standardised_viruses_wout_short <- standardised_viruses_wout_short[,-7]
+standardised_viruses_wout_short
+standardised_env_wout_short <-standardised[c(1:12),(13:14)]
+standardised.mds_wout_short <- metaMDS(standardised_viruses_wout_short, distance = "bray", autotransform = FALSE)
+standardised.envfit_wout_short <- envfit(standardised_viruses_wout_short, standardised_env_wout_short, permutations = 999)
+standardised.virus.spp.fit_wout_short <- envfit(standardised.mds_wout_short, standardised_viruses_wout_short, permutations = 999)
+
+vdist_wout_short = vegdist(standardised_viruses_wout_short, "bray")
+
+viral_site.scrs_wout_short <- as.data.frame(scores(standardised.mds_wout_short, display = "sites")) #save NMDS results into dataframe
+viral_site.scrs_wout_short <- cbind(viral_site.scrs_wout_short, species = standardised_env_wout_short$species) #add grouping variable "species" to dataframe
+viral_site.scrs_wout_short <- cbind(viral_site.scrs_wout_short, location = standardised_env_wout_short$location) #add grouping variable "location" of cluster grouping to dataframe
+viral_site.scrs_wout_short <- mutate_if(viral_site.scrs_wout_short, is.character, as.factor)
+
+viral_spp.scrs_wout_short <- as.data.frame(scores(standardised.virus.spp.fit_wout_short, display = "vectors")) #save species intrinsic values into dataframe
+viral_spp.scrs_wout_short <- cbind(viral_spp.scrs_wout_short, Species = rownames(viral_spp.scrs_wout_short)) #add species names to dataframe
+viral_spp.scrs_wout_short <- cbind(viral_spp.scrs_wout_short, pval = standardised.virus.spp.fit_wout_short$vectors$pvals) #add pvalues to dataframe so you can select species which are significant
+#spp.scrs<- cbind(spp.scrs, abrev = abbreviate(spp.scrs$Species, minlength = 6)) #abbreviate species names
+viral_sig.spp.scrs_wout_short <- subset(viral_spp.scrs_wout_short, pval<=0.05) #subset data to show species significant at 0.05
+
+#viral_env.scores <- as.data.frame(scores(standardised.envfit, display = "vectors")) #extracts relevant scores from envifit
+#viral_env.scores <- cbind(viral_env.scores, env.variables = rownames(viral_env.scores)) #and then gives them their names
+#viral_env.scores <- cbind(viral_env.scores, pval = standardised.envfit$vectors$pvals) # add pvalues to dataframe
+#sig.env.scrs <- subset(viral_env.scores, pval<=0.05) #subset data to show variables significant at 0.05
+
+nmds.plot.virus_wout_short <- ggplot(viral_site.scrs_wout_short, aes(x=NMDS1, y=NMDS2))+ #sets up the plot
+  geom_point(aes(NMDS1, NMDS2, colour = factor(viral_site.scrs_wout_short$location)), size = 2)+ #adds site points to plot, shape determined by Landuse, colour determined by Management
+  coord_fixed()+
+  theme_classic()+ 
+  theme(panel.background = element_rect(fill = NA, colour = "black", size = 1, linetype = "solid"))+
+  labs(colour = "location")+ # add legend labels for location
+  theme(legend.position = "right", legend.text = element_text(size = 12), legend.title = element_text(size = 12), axis.text = element_text(size = 10)) # add legend at right of plot
+
+adonis2(formula = vdist_wout_short~location, data = standardised_env_wout_short, method = "bray")
+
+```
+
+
+```{r, test- Not working to make ellipses as data is too noisy!, Not used in paper}
+# function for ellipsess 
+
+veganCovEllipse <- function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+{
+  theta <- (0:npoints) * 2 * pi/npoints
+  Circle <- cbind(cos(theta), sin(theta))
+  t(center + scale * t(Circle %*% chol(cov)))
+}
+
+df_ell.virus.location <- data.frame() #sets up a data frame before running the function.
+for(g in levels(viral_site.scrs$location)){
+  df_ell.virus.location <- rbind(df_ell.virus.location, cbind(as.data.frame(with(viral_site.scrs [viral_site.scrs$location==g,],
+                                                                                 
+                                                         veganCovEllipse(cov.wt(cbind(NMDS1,NMDS2),wt=rep(1/length(NMDS1),length(NMDS1)))$cov,center=c(mean(NMDS1),mean(NMDS2))))) ,location=g))
+}
+
+# data for labelling the ellipse
+NMDS.mean.virus=aggregate(viral_site.scrs[ ,c("NMDS1", "NMDS2")], 
+                         list(group = viral_site.scrs$location), mean)
+
+NMDS.mean=aggregate(viral_site.scrs[,c("NMDS1", "NMDS2")], 
+                    list(group = viral_site.scrs$location), mean)
+
+
+nmds.plot.virus+ 
+geom_path(data = df_ell.virus.location, aes(x = NMDS1, y = NMDS2, group = location)) #this is the ellipse, seperate ones by Site. 
+
+```
